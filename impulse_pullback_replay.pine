@@ -98,12 +98,12 @@ if newShortEntry
     trackingImpulse := false
 
 // Time-based hard exit
-if strategy.position_size != 0 and tradeEntryBar != na and bar_index - tradeEntryBar >= maxTradeBars
+if strategy.position_size != 0 and not na(tradeEntryBar) and bar_index - tradeEntryBar >= maxTradeBars
     strategy.close("Long")
     strategy.close("Short")
 
 // Reset entry bar marker when flat
-if strategy.position_size == 0 and tradeEntryBar != na and strategy.closedtrades > 0
+if strategy.position_size == 0 and not na(tradeEntryBar) and strategy.closedtrades > 0
     tradeEntryBar := na
 
 // ─────────────────────────────────────────────────────────────────────────────
