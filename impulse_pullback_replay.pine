@@ -46,7 +46,8 @@ upper_wick  = high - math.max(open, close)
 lower_wick  = math.min(open, close) - low
 wick_cap_ok = (upper_wick <= body_size * wick_ratio_cap) and (lower_wick <= body_size * wick_ratio_cap)
 
-chop_score  = ta.sum(body_size < body_avg * chop_body_factor, chop_lookback)
+chop_flag   = body_size < body_avg * chop_body_factor ? 1.0 : 0.0
+chop_score  = ta.sma(chop_flag, chop_lookback) * chop_lookback
 is_choppy   = use_chop_filter and chop_score >= math.round(chop_lookback * 0.6)
 
 is_impulse_bull = close > open and body_size > body_avg * body_mult and volume > vol_avg * vol_mult and wick_cap_ok and not is_choppy
@@ -119,7 +120,7 @@ if short_signal
 
 // Time-based exit
 in_trade = strategy.position_size != 0
-if in_trade and trade_entry_bar != na and (bar_index - trade_entry_bar >= max_hold_bars)
+if in_trade and not na(trade_entry_bar) and (bar_index - trade_entry_bar >= max_hold_bars)
     strategy.close("Long")
     strategy.close("Short")
 
@@ -136,10 +137,13 @@ plotshape(has_impulse, title="Impulse captured", location=location.abovebar, sty
 plotshape(long_signal, title="Long signal", location=location.belowbar, style=shape.triangleup, color=color.new(color.lime, 0), size=size.small, text="Long")
 plotshape(short_signal, title="Short signal", location=location.abovebar, style=shape.triangledown, color=color.new(color.red, 0), size=size.small, text="Short")
 
-if show_stops and in_trade
-    plot(strategy.position_avg_price, "Entry", color=color.new(color.blue, 60), style=plot.style_linebr)
-    plot(trade_stop_price, "Stop", color=color.new(color.red, 40), style=plot.style_circles)
-    plot(trade_target, "Target", color=color.new(color.green, 20), style=plot.style_circles)
+entry_plot  = show_stops and in_trade ? strategy.position_avg_price : na
+stop_plot   = show_stops and in_trade ? trade_stop_price : na
+target_plot = show_stops and in_trade ? trade_target : na
+
+plot(entry_plot,  "Entry",  color=color.new(color.blue, 60), style=plot.style_linebr)
+plot(stop_plot,   "Stop",   color=color.new(color.red, 40),  style=plot.style_circles)
+plot(target_plot, "Target", color=color.new(color.green, 20), style=plot.style_circles)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ALERTS
