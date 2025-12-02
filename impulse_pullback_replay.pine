@@ -2,51 +2,133 @@
 // © tradingview-indicator-1
 
 //@version=6
-strategy("Impulse-Pullback Replay", overlay=true, margin_long=100, margin_short=100)
+strategy("Impulse-Pullback Replay", overlay=true, margin_long=100, margin_short=100, process_orders_on_close=true)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INPUTS
 // ─────────────────────────────────────────────────────────────────────────────
-// Add your input parameters here
-// Example:
-// length = input.int(14, title="Length", minval=1)
+lookbackDays     = input.float(90, "Volume lookback (days)", minval=1, step=1)
+maxTradeBars     = input.int(60, "Max bars in trade", minval=1)
+rMultiple        = input.float(1.5, "Risk/Reward target (R)", minval=0.1, step=0.1)
+pullbackMinPct   = input.float(50, "Pullback min % of impulse body", minval=1, maxval=100, step=1)
+pullbackMaxPct   = input.float(70, "Pullback max % of impulse body", minval=1, maxval=100, step=1)
+volImpulseMult   = input.float(3.0, "Volume impulse multiplier", minval=0.1, step=0.05)
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CALCULATIONS
+// STATE VARIABLES
 // ─────────────────────────────────────────────────────────────────────────────
-// Add your indicator calculations here
-// Example:
-// sma_value = ta.sma(close, length)
+var bool   trackingImpulse = false
+var int    trackedDir      = 0
+var float  trackedOpen     = na
+var float  trackedClose    = na
+var float  trackedHigh     = na
+var float  trackedLow      = na
+var float  trackedBodyHigh = na
+var float  trackedBodyLow  = na
+var int    impulseBarIndex = na
+var int    tradeEntryBar   = na
+var bool   setupInvalid    = false
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CONDITIONS
+// HELPER CALCULATIONS
 // ─────────────────────────────────────────────────────────────────────────────
-// Define your entry/exit conditions here
-// Example:
-// longCondition = ta.crossover(close, sma_value)
-// shortCondition = ta.crossunder(close, sma_value)
+tfMinutes        = timeframe.in_seconds() / 60.0
+rawLookbackBars  = int(math.round(lookbackDays * 24 * 60 / tfMinutes))
+lookbackBars     = math.max(1, math.min(rawLookbackBars, 1000))
+
+body             = math.abs(close - open)
+prevBody         = math.abs(close[1] - open[1])
+volAvg           = ta.sma(volume, lookbackBars)
+
+isImpulse        = not trackingImpulse and strategy.position_size == 0 and not na(volAvg) and body > 3 * prevBody and volume > volImpulseMult * volAvg
+impulseDir       = close > open ? 1 : -1
+bodyHigh         = math.max(open, close)
+bodyLow          = math.min(open, close)
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STRATEGY ENTRIES & EXITS
+// IMPULSE CAPTURE
 // ─────────────────────────────────────────────────────────────────────────────
-// Add your strategy entry/exit logic here
-// Example:
-// if (longCondition)
-//     strategy.entry("Long", strategy.long)
-// if (shortCondition)
-//     strategy.entry("Short", strategy.short)
+if isImpulse
+    trackingImpulse := true
+    setupInvalid    := false
+    trackedDir      := impulseDir
+    trackedOpen     := open
+    trackedClose    := close
+    trackedHigh     := high
+    trackedLow      := low
+    trackedBodyHigh := bodyHigh
+    trackedBodyLow  := bodyLow
+    impulseBarIndex := bar_index
+
+// Invalidate if price breaks opposite wick before a pullback completes
+if trackingImpulse and not setupInvalid and bar_index > impulseBarIndex
+    setupInvalid := trackedDir == 1 ? low < trackedLow : high > trackedHigh
+    if setupInvalid
+        trackingImpulse := false
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PLOTS
+// PULLBACK ZONES (only the first bar after the impulse qualifies)
 // ─────────────────────────────────────────────────────────────────────────────
-// Add your visual elements here
-// Example:
-// plot(sma_value, title="SMA", color=color.blue, linewidth=2)
+impulseBodySize = trackedBodyHigh - trackedBodyLow
+pullbackLowPct  = math.min(pullbackMinPct, pullbackMaxPct) * 0.01
+pullbackHighPct = math.max(pullbackMinPct, pullbackMaxPct) * 0.01
+longZoneLow     = trackedBodyLow + pullbackLowPct * impulseBodySize
+longZoneHigh    = trackedBodyLow + pullbackHighPct * impulseBodySize
+shortZoneHigh   = trackedBodyHigh - pullbackLowPct * impulseBodySize
+shortZoneLow    = trackedBodyHigh - pullbackHighPct * impulseBodySize
+
+isFirstPullbackBar = bar_index == impulseBarIndex + 1
+inLongZone  = trackingImpulse and not setupInvalid and trackedDir == 1 and isFirstPullbackBar and close >= longZoneLow and close <= longZoneHigh
+inShortZone = trackingImpulse and not setupInvalid and trackedDir == -1 and isFirstPullbackBar and close >= shortZoneLow and close <= shortZoneHigh
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENTRIES AND RISK PARAMETERS
+// ─────────────────────────────────────────────────────────────────────────────
+newLongEntry  = inLongZone and strategy.position_size == 0
+newShortEntry = inShortZone and strategy.position_size == 0
+
+if newLongEntry
+    stopLong   = trackedLow - syminfo.mintick
+    riskLong   = close - stopLong
+    takeProfit = close + rMultiple * riskLong
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long TP/SL", from_entry="Long", stop=stopLong, limit=takeProfit)
+    tradeEntryBar   := bar_index
+    trackingImpulse := false
+
+if newShortEntry
+    stopShort  = trackedHigh + syminfo.mintick
+    riskShort  = stopShort - close
+    takeProfit = close - rMultiple * riskShort
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short TP/SL", from_entry="Short", stop=stopShort, limit=takeProfit)
+    tradeEntryBar   := bar_index
+    trackingImpulse := false
+
+// Time-based hard exit
+if strategy.position_size != 0 and not na(tradeEntryBar) and bar_index - tradeEntryBar >= maxTradeBars
+    strategy.close("Long")
+    strategy.close("Short")
+
+// Reset entry bar marker when flat
+if strategy.position_size == 0 and not na(tradeEntryBar) and strategy.closedtrades > 0
+    tradeEntryBar := na
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VISUALS
+// ─────────────────────────────────────────────────────────────────────────────
+// Impulse markers anchored to each impulse candle's high/low (price-relative)
+if isImpulse
+    impulseLabelStyle = impulseDir == 1 ? label.style_triangleup : label.style_triangledown
+    impulseLabelColor = impulseDir == 1 ? color.green : color.red
+    impulseLabelY     = impulseDir == 1 ? high : low
+    label.new(bar_index, impulseLabelY, "Imp", style=impulseLabelStyle, color=impulseLabelColor, textcolor=color.white, size=size.tiny)
+
+plotshape(newLongEntry, title="Long Entry", style=shape.labelup, color=color.green, location=location.belowbar, text="Long")
+plotshape(newShortEntry, title="Short Entry", style=shape.labeldown, color=color.red, location=location.abovebar, text="Short")
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ALERTS
 // ─────────────────────────────────────────────────────────────────────────────
-// Add your alert conditions here
-// Example:
-// alertcondition(longCondition, title="Long Entry", message="Long entry signal")
-// alertcondition(shortCondition, title="Short Entry", message="Short entry signal")
+alertcondition(newLongEntry, title="Impulse Pullback Long", message="Long setup confirmed after pullback")
+alertcondition(newShortEntry, title="Impulse Pullback Short", message="Short setup confirmed after pullback")

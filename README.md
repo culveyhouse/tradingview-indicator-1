@@ -7,6 +7,15 @@ This is a TradingView strategy/indicator in Pine v6 called "Impulse-Pullback Rep
 2. Navigate to **Pine Editor** (bottom panel)
 3. Copy the contents of `impulse_pullback_replay.pine` into the editor
 4. Click **Add to Chart** to apply the strategy
+5. Adjust the inputs to taste (defaults are designed for 1m futures charts):
+   - **Volume lookback (days)**: rolling window for average volume when evaluating 3x impulse volume (default `90`, capped internally to 1000 bars for efficiency). The script automatically re-arms for new impulses only when flat and not currently tracking one.
+   - **Max bars in trade**: hard time stop in bars (default `60`).
+   - **Risk/Reward target (R)**: single target in R multiples (default `1.5`).
+   - **Pullback min % of impulse body**: lower bound for the pullback close as a percent of the impulse body (default `50`).
+   - **Pullback max % of impulse body**: upper bound for the pullback close as a percent of the impulse body (default `70`).
+   - **Volume impulse multiplier**: decimal multiplier applied to average volume when qualifying an impulse (default `3.0`).
+6. Entries require the very next candle after a 3x impulse to close between 50–70% of that impulse’s body; no later pullbacks will trigger. Pullback zones are no longer plotted as persistent horizontal lines to keep the chart clean, and impulse bars are marked directly on the candles.
+7. Run **Add Alert** with the built-in alertconditions for automated notifications.
 
 ## File Structure
 
