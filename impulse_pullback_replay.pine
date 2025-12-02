@@ -112,7 +112,11 @@ if strategy.position_size == 0 and not na(tradeEntryBar) and strategy.closedtrad
 // ─────────────────────────────────────────────────────────────────────────────
 // VISUALS
 // ─────────────────────────────────────────────────────────────────────────────
-plotshape(isImpulse, title="Impulse", style=shape.triangleup, color=color.yellow, size=size.tiny, location=location.abovebar, text="Impulse")
+isBullImpulse = isImpulse and impulseDir == 1
+isBearImpulse = isImpulse and impulseDir == -1
+
+plotshape(isBullImpulse, title="Bull Impulse", style=shape.triangleup, color=color.lime, size=size.small, location=location.abovebar, text="Imp")
+plotshape(isBearImpulse, title="Bear Impulse", style=shape.triangledown, color=color.orange, size=size.small, location=location.belowbar, text="Imp")
 plotshape(newLongEntry, title="Long Entry", style=shape.labelup, color=color.green, text="Long")
 plotshape(newShortEntry, title="Short Entry", style=shape.labeldown, color=color.red, text="Short")
 
