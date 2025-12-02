@@ -10,6 +10,8 @@ strategy("Impulse-Pullback Replay", overlay=true, margin_long=100, margin_short=
 lookbackDays     = input.float(90, "Volume lookback (days)", minval=1, step=1)
 maxTradeBars     = input.int(60, "Max bars in trade", minval=1)
 rMultiple        = input.float(1.5, "Risk/Reward target (R)", minval=0.1, step=0.1)
+pullbackMinPct   = input.float(50, "Pullback min % of impulse body", minval=1, maxval=100, step=1)
+pullbackMaxPct   = input.float(70, "Pullback max % of impulse body", minval=1, maxval=100, step=1)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STATE VARIABLES
@@ -67,10 +69,12 @@ if trackingImpulse and not setupInvalid and bar_index > impulseBarIndex
 // PULLBACK ZONES (only the first bar after the impulse qualifies)
 // ─────────────────────────────────────────────────────────────────────────────
 impulseBodySize = trackedBodyHigh - trackedBodyLow
-longZoneLow     = trackedBodyLow + 0.5 * impulseBodySize
-longZoneHigh    = trackedBodyLow + 0.7 * impulseBodySize
-shortZoneHigh   = trackedBodyHigh - 0.5 * impulseBodySize
-shortZoneLow    = trackedBodyHigh - 0.7 * impulseBodySize
+pullbackLowPct  = math.min(pullbackMinPct, pullbackMaxPct) * 0.01
+pullbackHighPct = math.max(pullbackMinPct, pullbackMaxPct) * 0.01
+longZoneLow     = trackedBodyLow + pullbackLowPct * impulseBodySize
+longZoneHigh    = trackedBodyLow + pullbackHighPct * impulseBodySize
+shortZoneHigh   = trackedBodyHigh - pullbackLowPct * impulseBodySize
+shortZoneLow    = trackedBodyHigh - pullbackHighPct * impulseBodySize
 
 isFirstPullbackBar = bar_index == impulseBarIndex + 1
 inLongZone  = trackingImpulse and not setupInvalid and trackedDir == 1 and isFirstPullbackBar and close >= longZoneLow and close <= longZoneHigh
