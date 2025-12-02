@@ -16,7 +16,7 @@ rMultiple        = input.float(1.5, "Risk/Reward target (R)", minval=0.1, step=0
 // ─────────────────────────────────────────────────────────────────────────────
 tfMinutes        = timeframe.in_seconds() / 60.0
 rawLookbackBars  = int(math.round(lookbackDays * 24 * 60 / tfMinutes))
-lookbackBars     = math.max(1, math.min(rawLookbackBars, 10000))
+lookbackBars     = math.max(1, math.min(rawLookbackBars, 1000))
 
 body             = math.abs(close - open)
 prevBody         = math.abs(close[1] - open[1])
