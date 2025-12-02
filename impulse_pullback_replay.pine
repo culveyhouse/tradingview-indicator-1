@@ -64,7 +64,7 @@ if trackingImpulse and not setupInvalid and bar_index > impulseBarIndex
         trackingImpulse := false
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PULLBACK ZONES
+// PULLBACK ZONES (only the first bar after the impulse qualifies)
 // ─────────────────────────────────────────────────────────────────────────────
 impulseBodySize = trackedBodyHigh - trackedBodyLow
 longZoneLow     = trackedBodyLow + 0.5 * impulseBodySize
@@ -72,8 +72,9 @@ longZoneHigh    = trackedBodyLow + 0.7 * impulseBodySize
 shortZoneHigh   = trackedBodyHigh - 0.5 * impulseBodySize
 shortZoneLow    = trackedBodyHigh - 0.7 * impulseBodySize
 
-inLongZone  = trackingImpulse and not setupInvalid and trackedDir == 1 and close >= longZoneLow and close <= longZoneHigh and bar_index > impulseBarIndex
-inShortZone = trackingImpulse and not setupInvalid and trackedDir == -1 and close >= shortZoneLow and close <= shortZoneHigh and bar_index > impulseBarIndex
+isFirstPullbackBar = bar_index == impulseBarIndex + 1
+inLongZone  = trackingImpulse and not setupInvalid and trackedDir == 1 and isFirstPullbackBar and close >= longZoneLow and close <= longZoneHigh
+inShortZone = trackingImpulse and not setupInvalid and trackedDir == -1 and isFirstPullbackBar and close >= shortZoneLow and close <= shortZoneHigh
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ENTRIES AND RISK PARAMETERS
@@ -111,11 +112,6 @@ if strategy.position_size == 0 and not na(tradeEntryBar) and strategy.closedtrad
 // ─────────────────────────────────────────────────────────────────────────────
 // VISUALS
 // ─────────────────────────────────────────────────────────────────────────────
-plot(trackingImpulse and trackedDir == 1 ? longZoneLow : na, title="Long Pullback Zone Low", color=color.new(color.green, 40), style=plot.style_linebr)
-plot(trackingImpulse and trackedDir == 1 ? longZoneHigh : na, title="Long Pullback Zone High", color=color.new(color.green, 10), style=plot.style_linebr)
-plot(trackingImpulse and trackedDir == -1 ? shortZoneHigh : na, title="Short Pullback Zone High", color=color.new(color.red, 40), style=plot.style_linebr)
-plot(trackingImpulse and trackedDir == -1 ? shortZoneLow : na, title="Short Pullback Zone Low", color=color.new(color.red, 10), style=plot.style_linebr)
-
 plotshape(isImpulse, title="Impulse", style=shape.triangleup, color=color.yellow, size=size.tiny, location=location.abovebar, text="Impulse")
 plotshape(newLongEntry, title="Long Entry", style=shape.labelup, color=color.green, text="Long")
 plotshape(newShortEntry, title="Short Entry", style=shape.labeldown, color=color.red, text="Short")

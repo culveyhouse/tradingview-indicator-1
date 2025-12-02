@@ -11,7 +11,8 @@ This is a TradingView strategy/indicator in Pine v6 called "Impulse-Pullback Rep
    - **Volume lookback (days)**: rolling window for average volume when evaluating 3x impulse volume (default `90`, capped internally to 1000 bars for efficiency). The script automatically re-arms for new impulses only when flat and not currently tracking one.
    - **Max bars in trade**: hard time stop in bars (default `60`).
    - **Risk/Reward target (R)**: single target in R multiples (default `1.5`).
-6. Run **Add Alert** with the built-in alertconditions for automated notifications.
+6. Entries require the very next candle after a 3x impulse to close between 50–70% of that impulse’s body; no later pullbacks will trigger. Pullback zones are no longer plotted as persistent horizontal lines to keep the chart clean.
+7. Run **Add Alert** with the built-in alertconditions for automated notifications.
 
 ## File Structure
 
