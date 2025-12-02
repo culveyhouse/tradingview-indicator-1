@@ -12,22 +12,6 @@ maxTradeBars     = input.int(60, "Max bars in trade", minval=1)
 rMultiple        = input.float(1.5, "Risk/Reward target (R)", minval=0.1, step=0.1)
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HELPER CALCULATIONS
-// ─────────────────────────────────────────────────────────────────────────────
-tfMinutes        = timeframe.in_seconds() / 60.0
-rawLookbackBars  = int(math.round(lookbackDays * 24 * 60 / tfMinutes))
-lookbackBars     = math.max(1, math.min(rawLookbackBars, 1000))
-
-body             = math.abs(close - open)
-prevBody         = math.abs(close[1] - open[1])
-volAvg           = ta.sma(volume, lookbackBars)
-
-isImpulse        = not na(volAvg) and body > 3 * prevBody and volume > 3 * volAvg
-impulseDir       = close > open ? 1 : -1
-bodyHigh         = math.max(open, close)
-bodyLow          = math.min(open, close)
-
-// ─────────────────────────────────────────────────────────────────────────────
 // STATE VARIABLES
 // ─────────────────────────────────────────────────────────────────────────────
 var bool   trackingImpulse = false
@@ -43,9 +27,25 @@ var int    tradeEntryBar   = na
 var bool   setupInvalid    = false
 
 // ─────────────────────────────────────────────────────────────────────────────
+// HELPER CALCULATIONS
+// ─────────────────────────────────────────────────────────────────────────────
+tfMinutes        = timeframe.in_seconds() / 60.0
+rawLookbackBars  = int(math.round(lookbackDays * 24 * 60 / tfMinutes))
+lookbackBars     = math.max(1, math.min(rawLookbackBars, 1000))
+
+body             = math.abs(close - open)
+prevBody         = math.abs(close[1] - open[1])
+volAvg           = ta.sma(volume, lookbackBars)
+
+isImpulse        = not trackingImpulse and strategy.position_size == 0 and not na(volAvg) and body > 3 * prevBody and volume > 3 * volAvg
+impulseDir       = close > open ? 1 : -1
+bodyHigh         = math.max(open, close)
+bodyLow          = math.min(open, close)
+
+// ─────────────────────────────────────────────────────────────────────────────
 // IMPULSE CAPTURE
 // ─────────────────────────────────────────────────────────────────────────────
-if isImpulse and strategy.position_size == 0
+if isImpulse
     trackingImpulse := true
     setupInvalid    := false
     trackedDir      := impulseDir
@@ -58,8 +58,10 @@ if isImpulse and strategy.position_size == 0
     impulseBarIndex := bar_index
 
 // Invalidate if price breaks opposite wick before a pullback completes
-if trackingImpulse and not setupInvalid
-    setupInvalid := trackedDir == 1 ? low <= trackedLow : high >= trackedHigh
+if trackingImpulse and not setupInvalid and bar_index > impulseBarIndex
+    setupInvalid := trackedDir == 1 ? low < trackedLow : high > trackedHigh
+    if setupInvalid
+        trackingImpulse := false
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PULLBACK ZONES
