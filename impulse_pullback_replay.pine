@@ -12,6 +12,7 @@ maxTradeBars     = input.int(60, "Max bars in trade", minval=1)
 rMultiple        = input.float(1.5, "Risk/Reward target (R)", minval=0.1, step=0.1)
 pullbackMinPct   = input.float(50, "Pullback min % of impulse body", minval=1, maxval=100, step=1)
 pullbackMaxPct   = input.float(70, "Pullback max % of impulse body", minval=1, maxval=100, step=1)
+volImpulseMult   = input.float(3.0, "Volume impulse multiplier", minval=0.1, step=0.05)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STATE VARIABLES
@@ -39,7 +40,7 @@ body             = math.abs(close - open)
 prevBody         = math.abs(close[1] - open[1])
 volAvg           = ta.sma(volume, lookbackBars)
 
-isImpulse        = not trackingImpulse and strategy.position_size == 0 and not na(volAvg) and body > 3 * prevBody and volume > 3 * volAvg
+isImpulse        = not trackingImpulse and strategy.position_size == 0 and not na(volAvg) and body > 3 * prevBody and volume > volImpulseMult * volAvg
 impulseDir       = close > open ? 1 : -1
 bodyHigh         = math.max(open, close)
 bodyLow          = math.min(open, close)

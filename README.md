@@ -13,6 +13,7 @@ This is a TradingView strategy/indicator in Pine v6 called "Impulse-Pullback Rep
    - **Risk/Reward target (R)**: single target in R multiples (default `1.5`).
    - **Pullback min % of impulse body**: lower bound for the pullback close as a percent of the impulse body (default `50`).
    - **Pullback max % of impulse body**: upper bound for the pullback close as a percent of the impulse body (default `70`).
+   - **Volume impulse multiplier**: decimal multiplier applied to average volume when qualifying an impulse (default `3.0`).
 6. Entries require the very next candle after a 3x impulse to close between 50–70% of that impulse’s body; no later pullbacks will trigger. Pullback zones are no longer plotted as persistent horizontal lines to keep the chart clean, and impulse bars are marked directly on the candles.
 7. Run **Add Alert** with the built-in alertconditions for automated notifications.
 
