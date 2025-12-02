@@ -2,51 +2,147 @@
 // © tradingview-indicator-1
 
 //@version=6
-strategy("Impulse-Pullback Replay", overlay=true, margin_long=100, margin_short=100)
+strategy("Impulse-Pullback Replay", overlay=true, margin_long=100, margin_short=100, initial_capital=100000)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INPUTS
 // ─────────────────────────────────────────────────────────────────────────────
-// Add your input parameters here
-// Example:
-// length = input.int(14, title="Length", minval=1)
+// Backtesting window & timing
+backtest_days  = input.int(90, "Backtest lookback (days)", minval=1)
+timeout_bars   = input.int(60, "Setup timeout (bars)", minval=1)
+max_hold_bars  = input.int(20, "Max bars in trade", minval=1, tooltip="Force-flatten trades after this many bars (1m bars ≈ minutes)")
+
+// Impulse detection
+body_lookback  = input.int(30, "Body lookback", minval=5)
+body_mult      = input.float(2.0, "Impulse body multiplier", step=0.1, minval=1.0)
+vol_lookback   = input.int(30, "Volume lookback", minval=5)
+vol_mult       = input.float(1.5, "Volume multiplier", step=0.05, minval=1.0)
+wick_ratio_cap = input.float(2.5, "Max wick:body ratio", step=0.1, minval=0.1, tooltip="Reject liquidation-style wicks (wick larger than this × body)")
+
+// Pullback & targets
+retrace_min    = input.float(0.5, "Pullback lower bound (50%)", step=0.05, minval=0.1, maxval=0.9)
+retrace_max    = input.float(0.7, "Pullback upper bound (70%)", step=0.05, minval=0.1, maxval=0.95)
+risk_reward    = input.float(1.5, "Risk:Reward target", step=0.1, minval=0.5, maxval=3.0)
+
+// Filters & visuals
+use_chop_filter   = input.bool(true, "Chop filter")
+chop_lookback     = input.int(6, "Chop lookback", minval=3)
+chop_body_factor  = input.float(0.45, "Small-body threshold factor", step=0.05)
+show_impulse_band = input.bool(true, "Plot pullback band")
+show_stops        = input.bool(true, "Plot stop/targets")
+
+// Derived window control
+ms_in_day   = 24 * 60 * 60 * 1000
+start_time  = timenow - backtest_days * ms_in_day
+allow_trade = time >= start_time
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CALCULATIONS
+// HELPER CALCULATIONS
 // ─────────────────────────────────────────────────────────────────────────────
-// Add your indicator calculations here
-// Example:
-// sma_value = ta.sma(close, length)
+body_size   = math.abs(close - open)
+body_avg    = ta.sma(body_size, body_lookback)
+vol_avg     = ta.sma(volume, vol_lookback)
+upper_wick  = high - math.max(open, close)
+lower_wick  = math.min(open, close) - low
+wick_cap_ok = (upper_wick <= body_size * wick_ratio_cap) and (lower_wick <= body_size * wick_ratio_cap)
+
+chop_score  = ta.sum(body_size < body_avg * chop_body_factor, chop_lookback)
+is_choppy   = use_chop_filter and chop_score >= math.round(chop_lookback * 0.6)
+
+is_impulse_bull = close > open and body_size > body_avg * body_mult and volume > vol_avg * vol_mult and wick_cap_ok and not is_choppy
+is_impulse_bear = close < open and body_size > body_avg * body_mult and volume > vol_avg * vol_mult and wick_cap_ok and not is_choppy
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CONDITIONS
+// STATE TRACKING
 // ─────────────────────────────────────────────────────────────────────────────
-// Define your entry/exit conditions here
-// Example:
-// longCondition = ta.crossover(close, sma_value)
-// shortCondition = ta.crossunder(close, sma_value)
+var bool  has_impulse      = false
+var bool  impulse_is_bull  = false
+var float impulse_open     = na
+var float impulse_close    = na
+var float impulse_high     = na
+var float impulse_low      = na
+var int   impulse_bar      = na
+var int   trade_entry_bar  = na
+var float trade_stop_price = na
+var float trade_target     = na
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STRATEGY ENTRIES & EXITS
+// IMPULSE CAPTURE
 // ─────────────────────────────────────────────────────────────────────────────
-// Add your strategy entry/exit logic here
-// Example:
-// if (longCondition)
-//     strategy.entry("Long", strategy.long)
-// if (shortCondition)
-//     strategy.entry("Short", strategy.short)
+if allow_trade and (is_impulse_bull or is_impulse_bear)
+    has_impulse     := true
+    impulse_is_bull := is_impulse_bull
+    impulse_open    := open
+    impulse_close   := close
+    impulse_high    := high
+    impulse_low     := low
+    impulse_bar     := bar_index
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SETUP MANAGEMENT
+// ─────────────────────────────────────────────────────────────────────────────
+imp_body_range = math.abs(impulse_close - impulse_open)
+retr_min = impulse_close + (impulse_is_bull ? -imp_body_range * retrace_min : imp_body_range * retrace_min)
+retr_max = impulse_close + (impulse_is_bull ? -imp_body_range * retrace_max : imp_body_range * retrace_max)
+pull_low = math.min(retr_min, retr_max)
+pull_high = math.max(retr_min, retr_max)
+
+opposite_wick = impulse_is_bull ? impulse_low : impulse_high
+invalidated   = has_impulse and ((impulse_is_bull and low < opposite_wick) or (not impulse_is_bull and high > opposite_wick))
+expired       = has_impulse and (bar_index - impulse_bar >= timeout_bars)
+
+if invalidated or expired
+    has_impulse := false
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENTRY TRIGGERS
+// ─────────────────────────────────────────────────────────────────────────────
+pullback_in_band = has_impulse and close >= pull_low and close <= pull_high
+long_signal  = pullback_in_band and impulse_is_bull and strategy.position_size == 0
+short_signal = pullback_in_band and not impulse_is_bull and strategy.position_size == 0
+
+if long_signal
+    trade_stop_price := opposite_wick
+    trade_target     := close + (close - trade_stop_price) * risk_reward
+    trade_entry_bar  := bar_index
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long TP/SL", "Long", stop=trade_stop_price, limit=trade_target)
+    has_impulse := false
+
+if short_signal
+    trade_stop_price := opposite_wick
+    trade_target     := close - (trade_stop_price - close) * risk_reward
+    trade_entry_bar  := bar_index
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short TP/SL", "Short", stop=trade_stop_price, limit=trade_target)
+    has_impulse := false
+
+// Time-based exit
+in_trade = strategy.position_size != 0
+if in_trade and trade_entry_bar != na and (bar_index - trade_entry_bar >= max_hold_bars)
+    strategy.close("Long")
+    strategy.close("Short")
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PLOTS
 // ─────────────────────────────────────────────────────────────────────────────
-// Add your visual elements here
-// Example:
-// plot(sma_value, title="SMA", color=color.blue, linewidth=2)
+pull_top_plot = show_impulse_band and has_impulse ? pull_high : na
+pull_bot_plot = show_impulse_band and has_impulse ? pull_low  : na
+pull_top_line = plot(pull_top_plot, "Pullback upper", color=color.new(color.teal, 10), linewidth=2)
+pull_bot_line = plot(pull_bot_plot, "Pullback lower", color=color.new(color.teal, 40), linewidth=2)
+fill(plot1=pull_top_line, plot2=pull_bot_line, color=color.new(color.teal, 85), title="Pullback zone")
+
+plotshape(has_impulse, title="Impulse captured", location=location.abovebar, style=shape.flag, color=color.new(color.orange, 0), size=size.tiny, text="Impulse")
+plotshape(long_signal, title="Long signal", location=location.belowbar, style=shape.triangleup, color=color.new(color.lime, 0), size=size.small, text="Long")
+plotshape(short_signal, title="Short signal", location=location.abovebar, style=shape.triangledown, color=color.new(color.red, 0), size=size.small, text="Short")
+
+if show_stops and in_trade
+    plot(strategy.position_avg_price, "Entry", color=color.new(color.blue, 60), style=plot.style_linebr)
+    plot(trade_stop_price, "Stop", color=color.new(color.red, 40), style=plot.style_circles)
+    plot(trade_target, "Target", color=color.new(color.green, 20), style=plot.style_circles)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ALERTS
 // ─────────────────────────────────────────────────────────────────────────────
-// Add your alert conditions here
-// Example:
-// alertcondition(longCondition, title="Long Entry", message="Long entry signal")
-// alertcondition(shortCondition, title="Short Entry", message="Short entry signal")
+alertcondition(long_signal,  title="Impulse-Pullback Long",  message="Long entry: impulse pullback in 50-70% band")
+alertcondition(short_signal, title="Impulse-Pullback Short", message="Short entry: impulse pullback in 50-70% band")
